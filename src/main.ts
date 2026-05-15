@@ -9,24 +9,48 @@ async function bootstrap() {
     'https://connectbankers.com',
     'https://www.connectbankers.com',
     'https://brokerf2.netlify.app',
-    'http://localhost:3000',
     'https://banker.f2fintech.in',
+    'http://localhost:3000',
   ];
 
   app.enableCors({
     origin: (origin, callback) => {
-      // allow non-browser requests/postman
-      if (!origin) return callback(null, true);
+      console.log('Request Origin:', origin);
+
+      if (!origin) {
+        return callback(null, true);
+      }
 
       if (allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        callback(new Error('Not allowed by CORS'));
+        return callback(null, true);
       }
+
+      return callback(
+        new Error(`Not allowed by CORS: ${origin}`),
+        false,
+      );
     },
+
     credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+
+    methods: [
+      'GET',
+      'POST',
+      'PUT',
+      'PATCH',
+      'DELETE',
+      'OPTIONS',
+    ],
+
+    allowedHeaders: [
+      'Origin',
+      'X-Requested-With',
+      'Content-Type',
+      'Accept',
+      'Authorization',
+    ],
+
+    exposedHeaders: ['Authorization'],
   });
 
   app.useGlobalPipes(
@@ -34,13 +58,17 @@ async function bootstrap() {
       whitelist: true,
       forbidNonWhitelisted: true,
       transform: true,
-      transformOptions: { enableImplicitConversion: true },
+      transformOptions: {
+        enableImplicitConversion: true,
+      },
     }),
   );
 
   const port = process.env.PORT || 3001;
-  await app.listen(port);
 
-  console.log(`🚀 Server running on http://localhost:${port}`);
+  await app.listen(port, '0.0.0.0');
+
+  console.log(`🚀 Server running on port ${port}`);
 }
+
 bootstrap();
