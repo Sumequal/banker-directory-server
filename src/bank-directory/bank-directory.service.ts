@@ -110,9 +110,7 @@ export class BankerDirectoryService {
     return { message: 'Submission rejected successfully', reason };
   }
 
-  // ✅ Manual create (Admin)
   async create(createDto: CreateBankerDirectoryDto): Promise<BankerDirectory> {
-    // ✅ AUTO SAVE associatedWith (admin typed)
     if (createDto?.associatedWith) {
       await this.upsertAssociatedOption(createDto.associatedWith);
     }
@@ -134,7 +132,6 @@ export class BankerDirectoryService {
   }
 
   async update(id: string, updateDto: UpdateBankerDirectoryDto) {
-    // ✅ if updated associatedWith then also auto save option
     if ((updateDto as any)?.associatedWith) {
       await this.upsertAssociatedOption((updateDto as any).associatedWith);
     }
@@ -159,6 +156,7 @@ export class BankerDirectoryService {
     associatedWith?: string,
     emailOfficial?: string,
     emailPersonal?: string,
+    product?: string,
     page: number = 1,
     limit: number = 10,
   ): Promise<{ data: BankerDirectory[]; totalCount: number }> {
@@ -170,9 +168,9 @@ export class BankerDirectoryService {
     if (associatedWith) query.associatedWith = new RegExp(associatedWith, 'i');
     if (emailOfficial) query.emailOfficial = new RegExp(emailOfficial, 'i');
     if (emailPersonal) query.emailPersonal = new RegExp(emailPersonal, 'i');
-
+    if (product) {query.product = {$in: [new RegExp(`^${product}$`, 'i')], };
+}
     const skip = (page - 1) * limit;
-
     const [data, totalCount] = await Promise.all([
       this.bankerDirectoryModel.find(query).skip(skip).limit(limit).exec(),
       this.bankerDirectoryModel.countDocuments(query),
