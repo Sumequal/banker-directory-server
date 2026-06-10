@@ -26,13 +26,11 @@ export class BankerDirectoryController {
     private readonly jwtService: JwtService,
   ) {}
 
-  // ✅ NEW: dropdown list
   @Get('associated-options')
   async getAssociatedOptions() {
     return this.bankerDirectoryService.getAssociatedOptions();
   }
 
-  // ✅ NEW: upsert (auto add if not exists)
   @Post('associated-options/upsert')
   async upsertAssociated(@Body('name') name: string) {
     if (!name?.trim()) {
@@ -107,26 +105,28 @@ export class BankerDirectoryController {
 
   @Get('filter')
   async filter(
-    @Query('state') state?: string,
-    @Query('city') city?: string,
-    @Query('bankerName') bankerName?: string,
-    @Query('emailOfficial') emailOfficial?: string,
-    @Query('emailPersonal') emailPersonal?: string,
-    @Query('associatedWith') associatedWith?: string,
-    @Query('page') page: number = 1,
-    @Query('limit') limit: number = 10,
-  ) {
-    return await this.bankerDirectoryService.filterByLocationAndName(
-      state,
-      city,
-      bankerName,
-      associatedWith,
-      emailOfficial,
-      emailPersonal,
-      +page,
-      +limit,
-    );
-  }
+  @Query('state') state?: string,
+  @Query('city') city?: string,
+  @Query('bankerName') bankerName?: string,
+  @Query('emailOfficial') emailOfficial?: string,
+  @Query('emailPersonal') emailPersonal?: string,
+  @Query('associatedWith') associatedWith?: string,
+  @Query('product') product?: string,
+  @Query('page') page: number = 1,
+  @Query('limit') limit: number = 10,
+) {
+  return await this.bankerDirectoryService.filterByLocationAndName(
+    state,
+    city,
+    bankerName,
+    associatedWith,
+    emailOfficial,
+    emailPersonal,
+    product,
+    +page,
+    +limit,
+  );
+}
 
   @Get('state-city-meta')
   async getStateCityMeta() {
@@ -167,7 +167,7 @@ export class BankerDirectoryController {
     return this.bankerDirectoryService.getMyReviews(userId);
   }
 
-  // ✅ Logged-in user: apne approved bankers (live directory me jo gaye)
+
   @Get('my-approved')
   async getMyApproved(@Req() req: Request) {
     let user: any = null;
