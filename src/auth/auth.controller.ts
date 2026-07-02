@@ -6,7 +6,9 @@ import {
   BadRequestException,
   Get,
   Param,
+  Res,
 } from '@nestjs/common';
+import { Response } from 'express';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login-dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
@@ -17,8 +19,22 @@ import { ForgotPasswordDto } from './dto/forgot-password.dto';
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
+  private setAuthCookie(res: Response, token: string) {
+    res.cookie('token', token, {
+      httpOnly: true,
+      secure: true, // production mein HTTPS hai to true rakho
+      sameSite: 'none', // cross-domain frontend<->backend ke liye 'none' chahiye
+      domain: process.env.COOKIE_DOMAIN, // e.g. '.connectbankers.com'
+      path: '/',
+      maxAge: 24 * 60 * 60 * 1000, // 1 din
+    });
+  }
+
   @Post('login')
-  async login(@Body() loginDto: LoginDto): Promise<{
+  async login(
+    @Body() loginDto: LoginDto,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<{
     access_token: string;
     role: 'admin' | 'user' | 'broker' | 'brokeradmin';
     redirectTo: string;
@@ -34,11 +50,17 @@ export class AuthController {
         ? `${process.env.BROKER_APP_URL ?? 'https://brokerf2.netlify.app'}/directory/tasks`
         : `${process.env.BANKER_APP_URL ?? 'https://connectbankers.com'}/directory/tasks`;
 
+    // ✅ Cookie backend se set ho rahi hai — cross-domain issue fix
+    this.setAuthCookie(res, access_token);
+
     return { access_token, role, redirectTo };
   }
 
   @Post('signup')
-  async signup(@Body() createDto: CreateUserDto): Promise<{
+  async signup(
+    @Body() createDto: CreateUserDto,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<{
     access_token: string;
     role: 'admin' | 'user' | 'broker' | 'brokeradmin';
     redirectTo: string;
@@ -58,6 +80,9 @@ export class AuthController {
         ? `${process.env.BROKER_APP_URL ?? 'https://brokerf2.netlify.app'}/directory/tasks`
         : `${process.env.BANKER_APP_URL ?? 'https://connectbankers.com'}/directory/tasks`;
 
+    // ✅ Cookie backend se set ho rahi hai
+    this.setAuthCookie(res, access_token);
+
     return { access_token, role, redirectTo };
   }
 
@@ -67,7 +92,22 @@ export class AuthController {
     return { message: msg };
   }
 
-  // ✅ reset with token + email in query
+  @Post('logout')
+  async logout(@Res({ passthrough: true }) res: Response) {
+  res.clearCookie('token', {
+    httpOnly: true,
+    secure: true,
+    sameSite: 'none',
+    domain: process.env.COOKIE_DOMAIN,
+    path: '/',
+  });
+
+  return {
+    message: 'Logout successful',
+  };
+}
+
+
   @Post('reset-password')
   async resetPassword(
     @Query('token') token: string,

@@ -4,8 +4,8 @@ import { BankerDirectoryController } from './bank-directory.controller';
 import { BankerDirectoryService } from './bank-directory.service';
 import { BankerDirectory, BankerDirectorySchema } from './schemas/bank-directory.schema';
 import { BankerDirectoryReview, BankerDirectoryReviewSchema } from './schemas/banker_directory_review.schema';
-import { JwtModule } from '@nestjs/jwt'; // ✅ yeh add karo
-import { AuthModule } from '../auth/auth.module'; // ✅ yahan se JwtService aayega
+import { JwtModule } from '@nestjs/jwt';
+import { AuthModule } from '../auth/auth.module'; 
 import { AssociatedOption, AssociatedOptionSchema } from './schemas/associated-option.schema';
 
 

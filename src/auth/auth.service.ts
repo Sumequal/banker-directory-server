@@ -22,7 +22,7 @@ export class AuthService {
 
  private normalizeEmail(email: string) {
   const raw = (email || '').trim();
-  const decoded = decodeURIComponent(raw); // ✅ important
+  const decoded = decodeURIComponent(raw);
   return decoded.toLowerCase();
 }
 
