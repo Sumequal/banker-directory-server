@@ -34,15 +34,11 @@ export class AuthService {
 
 
   async validateUser(loginDto: LoginDto) {
-  console.log("========== LOGIN DEBUG ==========");
-  console.log("Login Email:", loginDto.email);
-
   const user = await this.userService.findByEmail(loginDto.email);
 
   console.log("User Found:", user);
 
   if (!user) {
-    console.log("❌ User Not Found");
     return null;
   }
 
@@ -55,7 +51,6 @@ export class AuthService {
     return result;
   }
 
-  console.log("❌ Password Mismatch");
   return null;
 }
 
