@@ -32,12 +32,10 @@ interface AuthenticatedUser {
   _id?: string;
   id?: string;
   sub?: string;
-  role?: string; // ASSUMPTION: admin yahi field se identify hota hai — confirm kar lena
+  role?: string;
   [key: string]: any;
 }
 
-// Har :id route ke liye reusable — invalid Mongo ObjectId par clean 400 deta hai,
-// warna Mongoose ka CastError unhandled 500 ban jata
 @Injectable()
 class ParseObjectIdPipe implements PipeTransform<string, string> {
   transform(value: string, metadata: ArgumentMetadata): string {
@@ -48,6 +46,8 @@ class ParseObjectIdPipe implements PipeTransform<string, string> {
   }
 }
 
+const MAX_UPLOAD_SIZE = 5 * 1024 * 1024; 
+
 @Controller('banker-directory')
 export class BankerDirectoryController {
   private readonly logger = new Logger(BankerDirectoryController.name);
@@ -57,15 +57,7 @@ export class BankerDirectoryController {
     private readonly jwtService: JwtService,
   ) {}
 
-  // ==========================
-  // Auth helpers
-  // ==========================
 
-  /**
-   * Authorization header se JWT verify karta hai. Token missing/invalid ho
-   * to 401 throw karta hai — "logged in user" maangne wale har route isi
-   * se guzarta hai, taaki anonymous request aage hi na badhe.
-   */
   private getUserFromRequest(req: Request): AuthenticatedUser {
     const authHeader = req.headers['authorization'] as string | undefined;
 
@@ -88,11 +80,6 @@ export class BankerDirectoryController {
     return payload;
   }
 
-  /**
-   * ASSUMPTION: JWT payload me 'role' field admin identify karta hai
-   * (e.g. { role: 'admin' }). Field ka naam/structure alag hai to
-   * bas neeche wali if condition badal dena.
-   */
   private requireAdmin(req: Request): AuthenticatedUser {
     const user = this.getUserFromRequest(req);
     if (user.role !== 'admin') {
@@ -105,17 +92,11 @@ export class BankerDirectoryController {
     return (user._id || user.id || user.sub) as string;
   }
 
-  // ==========================
-  // Public lookups
-  // ==========================
-
   @Get('associated-options')
   async getAssociatedOptions() {
     return this.bankerDirectoryService.getAssociatedOptions();
   }
 
-  // NOTE: ye abhi bhi unauthenticated hai — agar sirf logged-in banker ya
-  // sirf admin ko naye "associated with" options add karne chahiye, batana
   @Post('associated-options/upsert')
   async upsertAssociated(@Body('name') name: string) {
     if (!name?.trim()) {
@@ -124,25 +105,22 @@ export class BankerDirectoryController {
     return this.bankerDirectoryService.upsertAssociatedOption(name.trim());
   }
 
-  // CHANGED: pehle anonymous (user = null) allow ho raha tha; ab login zaroori
-  // hai kyunki Review schema me createdBy required hai
   @Post('request-directory')
-  async submitForReview(
-    @Body() dto: CreateBankerDirectoryDto,
-    @Req() req: Request,
-  ) {
-    const user = this.getUserFromRequest(req);
-    return this.bankerDirectoryService.requestReview(dto, user);
-  }
+  async submitForReview(@Body() dto: CreateBankerDirectoryDto, @Req() req: Request) {
+    let user: any = null;
 
-  // ==========================
-  // Admin — review queue
-  // ==========================
+    const authHeader = (req.headers['authorization'] ||
+      req.headers['Authorization']) as string | undefined;
 
-  @Get('review-counts')
-  async getReviewCounts(@Req() req: Request) {
-    this.requireAdmin(req);
-    return this.bankerDirectoryService.getReviewCounts();
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.slice(7);
+      try {
+        user = this.jwtService.verify(token);
+      } catch (e: any) {
+        console.warn('JWT verify failed in /request-directory:', e?.message);
+      }
+    }
+
   }
 
   @Get('review-requests')
@@ -173,18 +151,12 @@ export class BankerDirectoryController {
     return this.bankerDirectoryService.rejectReview(id, reason.trim());
   }
 
-  // ==========================
-  // Self-service profile (logged-in banker)
-  // ==========================
-
   @Get('profile')
   async getMyProfile(@Req() req: Request) {
     const user = this.getUserFromRequest(req);
     return this.bankerDirectoryService.getMyProfile(user);
   }
 
-  // Public profile view — service layer decide kare ki emailPersonal/contact
-  // jaisi fields public response me jani chahiye ya nahi
   @Get('profile/:id')
   async getProfile(@Param('id', ParseObjectIdPipe) id: string) {
     return this.bankerDirectoryService.getProfile(id);
@@ -215,7 +187,7 @@ export class BankerDirectoryController {
     @Req() req: Request,
     @UploadedFile(
       new ParseFilePipeBuilder()
-        .addMaxSizeValidator({ maxSize: 5 * 1024 * 1024 }) // 5MB
+        .addMaxSizeValidator({ maxSize: MAX_UPLOAD_SIZE })
         .build({ errorHttpStatusCode: HttpStatus.BAD_REQUEST }),
     )
     file: Express.Multer.File,
@@ -230,7 +202,7 @@ export class BankerDirectoryController {
     @Req() req: Request,
     @UploadedFile(
       new ParseFilePipeBuilder()
-        .addMaxSizeValidator({ maxSize: 5 * 1024 * 1024 })
+        .addMaxSizeValidator({ maxSize: MAX_UPLOAD_SIZE })
         .build({ errorHttpStatusCode: HttpStatus.BAD_REQUEST }),
     )
     file: Express.Multer.File,
@@ -251,21 +223,7 @@ export class BankerDirectoryController {
     return this.bankerDirectoryService.deleteCoverImage(user);
   }
 
-  @Get('my-review-requests')
-  async getMyReviewRequests(@Req() req: Request) {
-    const user = this.getUserFromRequest(req);
-    return this.bankerDirectoryService.getMyReviews(this.getUserId(user));
-  }
 
-  @Get('my-approved')
-  async getMyApproved(@Req() req: Request) {
-    const user = this.getUserFromRequest(req);
-    return this.bankerDirectoryService.getMyApprovedBankers(this.getUserId(user));
-  }
-
-  // ==========================
-  // Admin — direct directory CRUD
-  // ==========================
 
   @Patch('link-user/:id')
   async linkUser(
@@ -286,43 +244,21 @@ export class BankerDirectoryController {
     return this.bankerDirectoryService.create(dto);
   }
 
-  @Get('get-directories')
-  async findAll(@Req() req: Request) {
-    this.requireAdmin(req);
-    return this.bankerDirectoryService.findAll();
+   @Get('get-directories')
+  async findAll() {
+    return await this.bankerDirectoryService.findAll();
   }
 
-  @Get('get-directory/:id')
-  async findOne(
-    @Param('id', ParseObjectIdPipe) id: string,
-    @Req() req: Request,
-  ) {
-    this.requireAdmin(req);
-    return this.bankerDirectoryService.findOne(id);
+   @Get('get-directory/:id')
+  async findOne(@Param('id') id: string) {
+    return await this.bankerDirectoryService.findOne(id);
   }
 
   @Patch('update-directory/:id')
-  async update(
-    @Param('id', ParseObjectIdPipe) id: string,
-    @Body() updateDto: UpdateBankerDirectoryDto,
-    @Req() req: Request,
-  ) {
-    this.requireAdmin(req);
+  async update(@Param('id') id: string, @Body() updateDto: UpdateBankerDirectoryDto) {
     return this.bankerDirectoryService.update(id, updateDto);
   }
 
-  // ==========================
-  // NEW: Admin — directory image upload BY ID
-  // ==========================
-  // WHY: profile-image / cover-image (upar) sirf getUserFromRequest() ke
-  // logged-in user ke liye kaam karte hain — ye admin ko koi bhi banker
-  // directory record (uske linked user account ke bina bhi) edit karne
-  // dete hain, jaisa admin "edit banker" screen se expected hai.
-  //
-  // NOTE: Service me uploadProfileImageById / uploadCoverImageById methods
-  // add karne honge — S3 upload wahi existing helper/logic use kare jo
-  // uploadProfileImage/uploadCoverImage already use kar rahe hain, bas
-  // "user" ke bajaye directory ka `id` se record dhoondh kar update kare.
 
   @Patch('directory-profile-image/:id')
   @UseInterceptors(FileInterceptor('file'))
@@ -331,7 +267,7 @@ export class BankerDirectoryController {
     @Req() req: Request,
     @UploadedFile(
       new ParseFilePipeBuilder()
-        .addMaxSizeValidator({ maxSize: 5 * 1024 * 1024 }) // 5MB
+        .addMaxSizeValidator({ maxSize: MAX_UPLOAD_SIZE })
         .build({ errorHttpStatusCode: HttpStatus.BAD_REQUEST }),
     )
     file: Express.Multer.File,
@@ -347,7 +283,7 @@ export class BankerDirectoryController {
     @Req() req: Request,
     @UploadedFile(
       new ParseFilePipeBuilder()
-        .addMaxSizeValidator({ maxSize: 5 * 1024 * 1024 })
+        .addMaxSizeValidator({ maxSize: MAX_UPLOAD_SIZE })
         .build({ errorHttpStatusCode: HttpStatus.BAD_REQUEST }),
     )
     file: Express.Multer.File,
@@ -357,20 +293,10 @@ export class BankerDirectoryController {
   }
 
   @Delete('delete-directory/:id')
-  async remove(
-    @Param('id', ParseObjectIdPipe) id: string,
-    @Req() req: Request,
-  ) {
-    this.requireAdmin(req);
-    return this.bankerDirectoryService.remove(id);
+  async remove(@Param('id') id: string) {
+    return await this.bankerDirectoryService.remove(id);
   }
 
-  // ==========================
-  // Public search
-  // ==========================
-
-  // NOTE: emailPersonal ko public search filter rakhna PII enumeration risk
-  // hai — decide kar lena ye chahiye ya nahi
   @Get('filter')
   async filter(
     @Query('state') state?: string,
@@ -404,45 +330,73 @@ export class BankerDirectoryController {
     return this.bankerDirectoryService.getStateCityMeta();
   }
 
-  @Post('bulk-upload')
+   @Post('bulk-upload')
   @UseInterceptors(FileInterceptor('file'))
-  async bulkUpload(
-    @UploadedFile(
-      new ParseFilePipeBuilder()
-        .addMaxSizeValidator({ maxSize: 10 * 1024 * 1024 }) // 10MB
-        .build({ errorHttpStatusCode: HttpStatus.BAD_REQUEST }),
-    )
-    file: Express.Multer.File,
-    @Req() req: Request,
-  ) {
-    this.requireAdmin(req);
-
-    // mimetype Excel/CSV files ke liye browser-to-browser unreliable hota
-    // hai, isliye extension se check kar rahe hain
-    if (!/\.(csv|xlsx|xls)$/i.test(file.originalname)) {
-      throw new BadRequestException('Only .csv, .xlsx, or .xls files are allowed');
-    }
-
+  async bulkUpload(@UploadedFile() file: Express.Multer.File) {
+    if (!file) throw new BadRequestException('File is required');
     return this.bankerDirectoryService.bulkImportFromBuffer(
       file.buffer,
       file.originalname,
     );
   }
 
-  @Get('user-collections')
+  @Get('my-review-requests')
+  async getMyReviewRequests(@Req() req: Request) {
+    let user: any = null;
+
+    const authHeader = (req.headers['authorization'] ||
+      req.headers['Authorization']) as string | undefined;
+
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.slice(7);
+      try {
+        user = this.jwtService.verify(token);
+      } catch (e: any) {
+        console.warn('JWT verify failed in /my-review-requests:', e?.message);
+      }
+    }
+
+    if (!user || !(user._id || user.id || user.sub)) {
+      throw new BadRequestException('User not identified from token');
+    }
+  }
+
+  @Get('my-approved')
+  async getMyApproved(@Req() req: Request) {
+    let user: any = null;
+
+    const authHeader = (req.headers['authorization'] ||
+      req.headers['Authorization']) as string | undefined;
+
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.slice(7);
+      try {
+        user = this.jwtService.verify(token);
+      } catch (e: any) {
+        console.warn('JWT verify failed in /my-approved:', e?.message);
+      }
+    }
+
+    if (!user || !(user._id || user.id || user.sub)) {
+      throw new BadRequestException('User not identified from token');
+    }
+
+    const userId = user._id || user.id || user.sub;
+    return this.bankerDirectoryService.getMyApprovedBankers(userId);
+  }
+
+   @Get('user-collections')
   async getUserCollections(
-    @Req() req: Request,
     @Query('search') search?: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
     @Query('sort') sort?: 'coins' | 'approved' | 'recent',
   ) {
-    this.requireAdmin(req);
     return this.bankerDirectoryService.getUserCollectionsSummary({
       search,
-      page: Math.max(1, Number(page) || 1),
-      limit: Math.min(100, Math.max(1, Number(limit) || 10)),
-      sort: sort || 'coins',
+      page: Number(page || 1),
+      limit: Number(limit || 10),
+      sort: (sort as any) || 'coins',
     });
   }
 }

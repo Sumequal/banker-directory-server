@@ -16,7 +16,6 @@ import {
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { randomUUID } from 'crypto';
-
 import { BankerDirectory } from './schemas/bank-directory.schema';
 import { BankerDirectoryReview } from './schemas/banker_directory_review.schema';
 import { CreateBankerDirectoryDto } from './dto/create-bank-directory.dto';
@@ -53,9 +52,6 @@ this.s3Client = new S3Client({
   },
 });
 }
-  // ==========================================================
-  // Private helpers — S3
-  // ==========================================================
 
   private readonly allowedImageMimeTypes = [
     'image/jpeg',
@@ -65,10 +61,6 @@ this.s3Client = new S3Client({
   ];
 
   private async uploadToS3(file: Express.Multer.File, folder: string): Promise<string> {
-    // Manual mimetype check — the framework's ParseFilePipeBuilder
-    // .addFileTypeValidator() magic-number detection was unreliable in this
-    // environment (rejected valid image/jpeg uploads), so we validate
-    // directly against the mimetype multer already parsed from the request.
     if (!file?.mimetype || !this.allowedImageMimeTypes.includes(file.mimetype)) {
       throw new BadRequestException(
         `Invalid file type: ${file?.mimetype || 'unknown'}. Allowed: jpg, jpeg, png, webp`,
@@ -119,10 +111,6 @@ this.s3Client = new S3Client({
     return { ...obj, profileImage, coverImage };
   }
 
-  // ==========================================================
-  // Private helpers — misc
-  // ==========================================================
-
   private escapeRegex(text: string): string {
     return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
@@ -142,10 +130,6 @@ this.s3Client = new S3Client({
     return idStr;
   }
 
-  // ==========================================================
-  // Associated Options (dropdown)
-  // ==========================================================
-
   async getAssociatedOptions() {
     return this.associatedModel.find().sort({ name: 1 }).exec();
   }
@@ -162,9 +146,6 @@ this.s3Client = new S3Client({
     );
   }
 
-  // ==========================================================
-  // Review flow — banker submit karta hai, admin approve/reject karta hai
-  // ==========================================================
 
   async requestReview(dto: CreateBankerDirectoryDto, userPayload?: any) {
     const createdBy = new Types.ObjectId(this.extractUserId(userPayload));
@@ -249,10 +230,6 @@ this.s3Client = new S3Client({
 
     return { message: 'Submission rejected successfully', reason };
   }
-
-  // ==========================================================
-  // Self-service profile (logged-in banker, already approved)
-  // ==========================================================
 
   async getMyProfile(userPayload: any) {
     const userId = this.extractUserId(userPayload);
@@ -362,19 +339,6 @@ this.s3Client = new S3Client({
     return { coverImage: await this.getSignedUrlForKey(newKey) };
   }
 
-  // ==========================================================
-  // NEW: Admin — directory image upload BY ID
-  // ==========================================================
-  // Same S3 pattern as uploadProfileImage/uploadCoverImage above, except
-  // the record is looked up by its own `_id` (findById) instead of by
-  // `createdBy: userId` — this lets an admin update ANY banker's photos
-  // from the directory edit screen, not just their own linked profile.
-  //
-  // Returns the full updated document (with fresh signed URLs for both
-  // images) via withSignedImageUrls, matching the shape findOne/update
-  // already return — so the frontend can read response.data.profileImage
-  // / response.data.coverImage the same way it does elsewhere.
-
   async uploadProfileImageById(id: string, file: Express.Multer.File) {
     if (!file) throw new BadRequestException('File is required');
 
@@ -388,13 +352,6 @@ this.s3Client = new S3Client({
 
     const oldKey = existing.profileImage;
     const newKey = await this.uploadToS3(file, 'banker-profile-images');
-
-    // NOTE: findByIdAndUpdate (no runValidators) only touches the
-    // profileImage path — unlike doc.save(), it does NOT re-validate the
-    // whole document, so legacy records with bad data in other fields
-    // (e.g. state/city stored as arrays instead of strings, or a missing
-    // createdBy on records created via bulk-upload) won't block this
-    // image update with an unrelated ValidationError.
     const updated = await this.bankerDirectoryModel
       .findByIdAndUpdate(id, { profileImage: newKey }, { new: true })
       .exec();
@@ -478,9 +435,6 @@ this.s3Client = new S3Client({
     return this.withSignedImageUrls(updated);
   }
 
-  // ==========================================================
-  // Admin — direct directory CRUD
-  // ==========================================================
 
   async create(createDto: CreateBankerDirectoryDto) {
     const { profileImage, coverImage, ...safeDto } = createDto as any;
@@ -534,9 +488,6 @@ this.s3Client = new S3Client({
     return deleted;
   }
 
-  // ==========================================================
-  // Search / filter
-  // ==========================================================
 
   async filterByLocationAndName(
     state?: string,
@@ -611,10 +562,6 @@ this.s3Client = new S3Client({
     ]);
     return { pending, approved, rejected };
   }
-
-  // ==========================================================
-  // Bulk import
-  // ==========================================================
 
   async bulkImportFromBuffer(buf: Buffer, filename: string) {
     let workbook: XLSX.WorkBook;
@@ -700,9 +647,6 @@ this.s3Client = new S3Client({
     return { success: true, inserted, updated, skipped, errors };
   }
 
-  // ==========================================================
-  // My reviews / my approved bankers
-  // ==========================================================
 
   async getMyReviews(userId: string) {
     if (!Types.ObjectId.isValid(userId)) {
@@ -727,9 +671,6 @@ this.s3Client = new S3Client({
     return Promise.all(docs.map((doc) => this.withSignedImageUrls(doc)));
   }
 
-  // ==========================================================
-  // Admin — referral coins / collections summary
-  // ==========================================================
 
   async getUserCollectionsSummary(params?: {
     search?: string;
@@ -744,23 +685,18 @@ this.s3Client = new S3Client({
     const search = String(params?.search || '').trim();
     const sort = (params?.sort || 'coins') as 'coins' | 'approved' | 'recent';
 
+    // ✅ rule
     const COINS_PER_APPROVED = 1;
     const COINS_TO_RUPEE_DIVISOR = 100;
 
     const match: any = {};
 
     if (search) {
-      const safeSearch = this.escapeRegex(search);
-      const orClauses: any[] = [
-        { createdByName: { $regex: safeSearch, $options: 'i' } },
-        { createdByEmail: { $regex: safeSearch, $options: 'i' } },
+      match.$or = [
+        { createdByName: { $regex: search, $options: 'i' } },
+        { createdByEmail: { $regex: search, $options: 'i' } },
+        { createdBy: { $regex: search, $options: 'i' } },
       ];
-
-    
-      if (Types.ObjectId.isValid(search)) {
-        orClauses.push({ createdBy: new Types.ObjectId(search) });
-      }
-      match.$or = orClauses;
     }
 
     const sortStage =
@@ -772,18 +708,28 @@ this.s3Client = new S3Client({
 
     const pipeline: any[] = [
       { $match: match },
+
       {
         $group: {
           _id: '$createdBy',
           name: { $first: '$createdByName' },
           email: { $first: '$createdByEmail' },
+
           totalLeads: { $sum: 1 },
-          approvedLeads: { $sum: { $cond: [{ $eq: ['$status', 'approved'] }, 1, 0] } },
-          pendingLeads: { $sum: { $cond: [{ $eq: ['$status', 'pending'] }, 1, 0] } },
-          rejectedLeads: { $sum: { $cond: [{ $eq: ['$status', 'rejected'] }, 1, 0] } },
+          approvedLeads: {
+            $sum: { $cond: [{ $eq: ['$status', 'approved'] }, 1, 0] },
+          },
+          pendingLeads: {
+            $sum: { $cond: [{ $eq: ['$status', 'pending'] }, 1, 0] },
+          },
+          rejectedLeads: {
+            $sum: { $cond: [{ $eq: ['$status', 'rejected'] }, 1, 0] },
+          },
+
           lastActivityAt: { $max: '$updatedAt' },
         },
       },
+
       {
         $addFields: {
           userId: { $toString: '$_id' },
@@ -796,7 +742,10 @@ this.s3Client = new S3Client({
           },
         },
       },
+
       { $sort: sortStage },
+
+      // facet: data + totals + total count
       {
         $facet: {
           data: [{ $skip: skip }, { $limit: limit }],
@@ -817,14 +766,19 @@ this.s3Client = new S3Client({
     const agg = await this.reviewModel.aggregate(pipeline).exec();
     const first = agg?.[0] || {};
 
+    const data = first.data || [];
+    const totalUsers = first.meta?.[0]?.totalUsers || 0;
+    const totalCoins = first.totals?.[0]?.totalCoins || 0;
+    const totalRupees = first.totals?.[0]?.totalRupees || 0;
+
     return {
       page,
       limit,
-      totalUsers: first.meta?.[0]?.totalUsers || 0,
-      totalCoins: first.totals?.[0]?.totalCoins || 0,
-      totalRupees: first.totals?.[0]?.totalRupees || 0,
-      rule: { approvedToCoin: COINS_PER_APPROVED, coinToRupee: COINS_TO_RUPEE_DIVISOR },
-      data: first.data || [],
+      totalUsers,
+      totalCoins,
+      totalRupees,
+      rule: { approvedToCoin: 1, coinToRupee: 100 },
+      data,
     };
   }
 }

@@ -1,4 +1,3 @@
-// src/auth/auth.module.ts (banker project)
 import { Module } from '@nestjs/common';
 import { JwtModule, JwtModuleOptions } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';

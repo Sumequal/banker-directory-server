@@ -193,9 +193,6 @@ export class BankerDirectoryReview {
 })
 rejectionReason?: string;
 
-  // ==========================
-  // Audit
-  // ==========================
 
   @Prop({
     type: mongoose.Schema.Types.ObjectId,
