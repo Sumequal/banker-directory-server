@@ -34,13 +34,30 @@ export class AuthService {
 
 
   async validateUser(loginDto: LoginDto) {
-    const user = await this.userService.findByEmail(loginDto.email);
-    if (user && (await bcrypt.compare(loginDto.password, user.password))) {
-      const { password, ...result } = user.toObject();
-      return result;
-    }
+  console.log("========== LOGIN DEBUG ==========");
+  console.log("Login Email:", loginDto.email);
+
+  const user = await this.userService.findByEmail(loginDto.email);
+
+  console.log("User Found:", user);
+
+  if (!user) {
+    console.log("❌ User Not Found");
     return null;
   }
+
+  const isMatch = await bcrypt.compare(loginDto.password, user.password);
+
+  console.log("Password Match:", isMatch);
+
+  if (isMatch) {
+    const { password, ...result } = user.toObject();
+    return result;
+  }
+
+  console.log("❌ Password Mismatch");
+  return null;
+}
 
   async login(user: any) {
     const payload = {
@@ -75,11 +92,10 @@ export class AuthService {
     return this.login(user);
   }
 
-  // ===== forgot password (send link) =====
+
   async sendResetPasswordEmail(emailRaw: string): Promise<string> {
     const email = this.normalizeEmail(emailRaw);
 
-    // ✅ enumeration-safe message
     const SAFE = 'If the email exists, a reset link has been sent.';
 
     const user = await this.userService.findByEmailBasic(email);
@@ -111,7 +127,6 @@ export class AuthService {
     return SAFE;
   }
 
-  // ===== reset password =====
   async resetPassword(dto: ResetPasswordDto, token: string, emailRaw: string): Promise<void> {
     if (!token) throw new BadRequestException('Token is missing');
 
@@ -151,10 +166,8 @@ export class AuthService {
       throw new BadRequestException('Invalid or expired token');
     }
 
-    // ✅ update password (hash)
-    user.password = await bcrypt.hash(dto.password, 10);
 
-    // ✅ clear token
+    user.password = await bcrypt.hash(dto.password, 10);
     user.resetPasswordTokenHash = null;
     user.resetPasswordExpiry = null;
     user.resetPasswordAttempts = 0;
