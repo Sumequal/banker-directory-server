@@ -105,24 +105,26 @@ export class BankerDirectoryController {
     return this.bankerDirectoryService.upsertAssociatedOption(name.trim());
   }
 
-  @Post('request-directory')
-  async submitForReview(@Body() dto: CreateBankerDirectoryDto, @Req() req: Request) {
-    let user: any = null;
+@Post('request-directory')
+async submitForReview(
+  @Body() dto: CreateBankerDirectoryDto,
+  @Req() req: Request,
+) {
+  let user: any = null;
 
-    const authHeader = (req.headers['authorization'] ||
-      req.headers['Authorization']) as string | undefined;
+  const authHeader = req.headers.authorization;
 
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-      const token = authHeader.slice(7);
-      try {
-        user = this.jwtService.verify(token);
-      } catch (e: any) {
-        console.warn('JWT verify failed in /request-directory:', e?.message);
-      }
+  if (authHeader?.startsWith('Bearer ')) {
+    const token = authHeader.slice(7);
+    try {
+      user = this.jwtService.verify(token);
+    } catch (e: any) {
+      console.warn(e.message);
     }
-
   }
 
+  return await this.bankerDirectoryService.requestReview(dto, user);
+}
   @Get('review-requests')
   async getAllSubmissions(@Req() req: Request) {
     this.requireAdmin(req);
