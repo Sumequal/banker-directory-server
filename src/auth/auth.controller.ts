@@ -22,11 +22,11 @@ export class AuthController {
   private setAuthCookie(res: Response, token: string) {
     res.cookie('token', token, {
       httpOnly: true,
-      secure: true, // production mein HTTPS hai to true rakho
-      sameSite: 'none', // cross-domain frontend<->backend ke liye 'none' chahiye
-      domain: process.env.COOKIE_DOMAIN, // e.g. '.connectbankers.com'
+      secure: true,
+      sameSite: 'none',
+      domain: process.env.COOKIE_DOMAIN,
       path: '/',
-      maxAge: 24 * 60 * 60 * 1000, // 1 din
+      maxAge: 24 * 60 * 60 * 1000,
     });
   }
 
@@ -50,7 +50,6 @@ export class AuthController {
         ? `${process.env.BROKER_APP_URL ?? 'https://brokerf2.netlify.app'}/directory/tasks`
         : `${process.env.BANKER_APP_URL ?? 'https://connectbankers.com'}/directory/tasks`;
 
-    // ✅ Cookie backend se set ho rahi hai — cross-domain issue fix
     this.setAuthCookie(res, access_token);
 
     return { access_token, role, redirectTo };
@@ -80,7 +79,6 @@ export class AuthController {
         ? `${process.env.BROKER_APP_URL ?? 'https://brokerf2.netlify.app'}/directory/tasks`
         : `${process.env.BANKER_APP_URL ?? 'https://connectbankers.com'}/directory/tasks`;
 
-    // ✅ Cookie backend se set ho rahi hai
     this.setAuthCookie(res, access_token);
 
     return { access_token, role, redirectTo };
